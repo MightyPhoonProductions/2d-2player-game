@@ -12,15 +12,29 @@ public class PlayerController : MonoBehaviour
 
     //==================== MOVEMENT SETTINGS ====================
     [Header("Movement Settings")]
-    [Tooltip("How fast the player moves left/right.")]
     public float moveSpeed = 5f;
+
+    // Dash (Player1 only)
+    private bool canDash = true;
+    private bool isDashing;
+    private float dashingPower = 24f;
+    private float dashingTime = 0.2f;
+    private float dashingCooldown = 1f;
+
+    // Invisibility (Player2 only)
+    private bool canGoInvisible = true;
+    private bool isInvisible;
+    private float invisibleTime = 2f;
+    private float invisibleCooldown = 5f;
+    [Tooltip("Objects with this tag can be walked through while invisible.")]
+    public string throughTag = "ThroughObject";
+
+    private Collider2D playerCollider;
+    private SpriteRenderer spriteRenderer;
 
     //==================== JUMP SETTINGS ====================
     [Header("Jump Settings")]
-    [Tooltip("How high the player can jump.")]
     public float jumpHeight = 2f;
-
-    [Tooltip("Layer(s) considered as ground for jumping.")]
     public LayerMask groundLayer;
 
     //==================== PRIVATE COMPONENTS ====================
@@ -29,19 +43,40 @@ public class PlayerController : MonoBehaviour
     private float gravityScale;
     private bool isGrounded;
 
+    [SerializeField] private TrailRenderer tr;
+
     //==================== UNITY METHODS ====================
     void Start()
     {
         rb = GetComponent<Rigidbody2D>();
-        gravityScale = rb.gravityScale;
+        gravityScale = rb != null ? rb.gravityScale : 1f;
 
         anim = GetComponent<Animator>();
+        playerCollider = GetComponent<Collider2D>();
+        spriteRenderer = GetComponent<SpriteRenderer>();
     }
 
     void Update()
     {
+        if (isDashing)
+        {
+            return; // lock input while dashing
+        }
+
         HandleMovement();
         HandleJump();
+
+        // Player1 Dash
+        if (playerID == PlayerID.Player1 && Input.GetKeyDown(KeyCode.LeftShift) && canDash)
+        {
+            StartCoroutine(Dash());
+        }
+
+        // Player2 Invisibility
+        if (playerID == PlayerID.Player2 && Input.GetKeyDown(KeyCode.RightShift) && canGoInvisible)
+        {
+            StartCoroutine(GoInvisible());
+        }
     }
 
     //==================== MOVEMENT ====================
@@ -60,7 +95,7 @@ public class PlayerController : MonoBehaviour
             if (Input.GetKey(KeyCode.RightArrow)) moveDirection = 1f;
         }
 
-        // Apply movement
+        // Apply movement (preserve current Y)
         Vector2 velocity = rb.linearVelocity;
         velocity.x = moveDirection * moveSpeed;
         rb.linearVelocity = velocity;
@@ -78,6 +113,88 @@ public class PlayerController : MonoBehaviour
         {
             anim.SetFloat("Speed", Mathf.Abs(moveDirection));
         }
+    }
+
+    //==================== DASHING (PLAYER1 ONLY) ====================
+    private IEnumerator Dash()
+    {
+        canDash = false;
+        isDashing = true;
+
+        float originalGravity = rb.gravityScale;
+        rb.gravityScale = 0f;
+
+        float dashDir = Mathf.Sign(transform.localScale.x);
+        rb.linearVelocity = new Vector2(dashDir * dashingPower, rb.linearVelocity.y);
+
+        if (tr != null) tr.emitting = true;
+
+        yield return new WaitForSeconds(dashingTime);
+
+        if (tr != null) tr.emitting = false;
+
+        rb.gravityScale = originalGravity;
+        isDashing = false;
+        rb.linearVelocity = new Vector2(0f, rb.linearVelocity.y);
+
+        yield return new WaitForSeconds(dashingCooldown);
+        canDash = true;
+    }
+
+    //==================== INVISIBILITY (PLAYER2 ONLY, FIXED) ====================
+    private IEnumerator GoInvisible()
+    {
+        canGoInvisible = false;
+        isInvisible = true;
+
+        // Make Player2 semi-transparent
+        if (spriteRenderer != null)
+        {
+            Color c = spriteRenderer.color;
+            c.a = 0.4f; // 40% visible
+            spriteRenderer.color = c;
+        }
+
+        // Find all colliders with the throughTag
+        GameObject[] taggedObjects = GameObject.FindGameObjectsWithTag(throughTag);
+        foreach (var obj in taggedObjects)
+        {
+            Collider2D col = obj.GetComponent<Collider2D>();
+            if (col != null)
+            {
+                Physics2D.IgnoreCollision(playerCollider, col, true);
+            }
+        }
+
+        // Stay invisible for X seconds
+        yield return new WaitForSeconds(invisibleTime);
+
+        // Restore visibility
+        if (spriteRenderer != null)
+        {
+            Color c = spriteRenderer.color;
+            c.a = 1f; // fully visible again
+            spriteRenderer.color = c;
+        }
+
+        // Re-enable collisions with tagged objects
+        foreach (var obj in taggedObjects)
+        {
+            if (obj != null)
+            {
+                Collider2D col = obj.GetComponent<Collider2D>();
+                if (col != null)
+                {
+                    Physics2D.IgnoreCollision(playerCollider, col, false);
+                }
+            }
+        }
+
+        isInvisible = false;
+
+        // Cooldown before invisibility can be used again
+        yield return new WaitForSeconds(invisibleCooldown);
+        canGoInvisible = true;
     }
 
     //==================== JUMPING ====================
@@ -163,7 +280,6 @@ public class PlayerController : MonoBehaviour
         if (other.CompareTag("Enemy"))
         {
             Debug.Log("Enemy hit!");
-            // Optional: Trigger death animation or restart
         }
     }
 }

@@ -6,6 +6,7 @@ TagManager:
   tags:
   - P1
   - P2
+  - ThroughObject
   layers:
   - Default
   - TransparentFX
@@ -14,7 +15,7 @@ TagManager:
   - Water
   - UI
   - IsGround
-  - 
+  - ThroughObject
   - 
   - 
   - 
